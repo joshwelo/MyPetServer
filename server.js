@@ -1,14 +1,21 @@
+require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
-// Load service account key
-const serviceAccount = require('./serviceAccountKey.json');
-
-// Initialize Firebase Admin SDK
+// Initialize Firebase Admin SDK using environment variables
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert({
+    type: 'service_account',
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: process.env.FIREBASE_AUTH_URI,
+    token_uri: process.env.FIREBASE_TOKEN_URI
+  })
 });
 
 const app = express();
@@ -52,49 +59,49 @@ app.post('/register-token', async (req, res) => {
 // Endpoint to send push notification
 app.post('/send-notification', async (req, res) => {
   try {
-      const { userId, title, body } = req.body;
+    const { userId, title, body } = req.body;
 
-      // Retrieve user's FCM token
-      const userTokenDoc = await admin.firestore()
-          .collection('user-tokens')
-          .doc(userId)
-          .get();
-      if (!userTokenDoc.exists) {
-          return res.status(404).json({ 
-              success: false, 
-              message: 'No token found for user' 
-          });
+    // Retrieve user's FCM token
+    const userTokenDoc = await admin.firestore()
+      .collection('user-tokens')
+      .doc(userId)
+      .get();
+    if (!userTokenDoc.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No token found for user' 
+      });
+    }
+
+    const registrationToken = userTokenDoc.data().token;
+
+    // Comprehensive notification payload
+    const message = {
+      notification: {
+        title: title,
+        body: body
+      },
+      token: registrationToken,
+      webpush: {
+        notification: {
+          requireInteraction: true
+        }
       }
+    };
 
-      const registrationToken = userTokenDoc.data().token;
+    // Send notification
+    const response = await admin.messaging().send(message);
 
-      // Comprehensive notification payload
-      const message = {
-          notification: {
-              title: title,
-              body: body
-          },
-          token: registrationToken,
-          webpush: {
-              notification: {
-                  requireInteraction: true
-              }
-          }
-      };
-
-      // Send notification
-      const response = await admin.messaging().send(message);
-
-      res.status(200).json({ 
-          success: true, 
-          message: 'Notification sent successfully' 
-      });
+    res.status(200).json({ 
+      success: true, 
+      message: 'Notification sent successfully' 
+    });
   } catch (error) {
-      console.error('Notification sending error:', error);
-      res.status(500).json({ 
-          success: false, 
-          message: 'Failed to send notification' 
-      });
+    console.error('Notification sending error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send notification' 
+    });
   }
 });
 
